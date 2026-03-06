@@ -25,6 +25,11 @@ POLL_INTERVAL = 18
 MIN_ALTITUDE_FT = None      # e.g. 1500
 MAX_DISTANCE_KM = None      # e.g. 80
 
+# Receiver Location Fallback (used if auto-detect fails)
+# E.g. 40.7128, -74.0060
+RECEIVER_LAT_FALLBACK = None
+RECEIVER_LON_FALLBACK = None
+
 # Update retry config
 UPDATE_RETRIES = 3
 UPDATE_INTERVAL = 10        # seconds between update attempts
@@ -275,14 +280,24 @@ if ENABLE_MILITARY:
     send_telegram(MILITARY_CHAT_ID, "🚀 All-Aircraft script restarted (Military Channel)", is_mil=True)
 
 # Auto-detect location
+RECEIVER_LAT = RECEIVER_LAT_FALLBACK
+RECEIVER_LON = RECEIVER_LON_FALLBACK
+
 try:
     rec = requests.get(RECEIVER_URL, timeout=5).json()
-    RECEIVER_LAT = rec.get("lat")
-    RECEIVER_LON = rec.get("lon")
-    print(f"✅ Auto-detected location: {RECEIVER_LAT}, {RECEIVER_LON}")
+    if rec.get("lat") is not None and rec.get("lon") is not None:
+        RECEIVER_LAT = rec.get("lat")
+        RECEIVER_LON = rec.get("lon")
+        print(f"✅ Auto-detected location: {RECEIVER_LAT}, {RECEIVER_LON}")
+    elif RECEIVER_LAT is not None and RECEIVER_LON is not None:
+        print(f"✅ Using fallback location: {RECEIVER_LAT}, {RECEIVER_LON}")
+    else:
+        print("⚠️ Location not found in receiver.json and no fallback provided.")
 except:
-    print("⚠️ Could not auto-detect location")
-    RECEIVER_LAT = RECEIVER_LON = None
+    if RECEIVER_LAT is not None and RECEIVER_LON is not None:
+        print(f"⚠️ Could not reach receiver.json. Using fallback location: {RECEIVER_LAT}, {RECEIVER_LON}")
+    else:
+        print("⚠️ Could not reach receiver.json and no fallback provided.")
 
 seen_aircraft = {}
 
