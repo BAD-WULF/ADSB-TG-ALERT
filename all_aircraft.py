@@ -63,6 +63,23 @@ def get_live_flight(hex_code):
         pass
     return None
 
+def get_external_v2_metadata(hex_code):
+    """Fetch supplement metadata from external v2 Hex APIs (ADSB.one, ADSB.fi)."""
+    endpoints = [
+        f"https://api.adsb.one/v2/hex/{hex_code}",
+        f"https://opendata.adsb.fi/api/v2/hex/{hex_code}"
+    ]
+    for url in endpoints:
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("ac") and len(data["ac"]) > 0:
+                    return data["ac"][0]  # Return the first matching aircraft object
+        except Exception as e:
+            print(f"⚠️ Error fetching external data from {url} for {hex_code}: {e}")
+    return {}
+
 def get_aircraft_image(hex_code, ac_type=None):
     """Fetch aircraft image URL from Planespotters.net API with ADSB-X silhouette fallback."""
     # 1. Try Planespotters (Real Photo)
@@ -278,12 +295,12 @@ while True:
             hex_code = ac.get("hex", "").upper().strip()
             if not hex_code: continue
 
-            # Military Detection
+            # Initial Military Detection (from local feed)
             is_mil = bool(ac.get("dbFlags", 0) & 1)
 
-            # Check Toggles
-            if is_mil and not ENABLE_MILITARY: continue
-            if not is_mil and not ENABLE_CIVIL: continue
+            # NOTE: We can't definitively check toggles yet, because it might secretly be
+            # a military plane that the local feed didn't catch the dbFlags for!
+            # We defer toggle checking inside the `hex_code not in seen_aircraft` block.
 
             lat = ac.get("lat")
             lon = ac.get("lon")
@@ -306,7 +323,22 @@ while True:
                 type_label = "Unknown"
                 gs = ac.get("gs", "N/A")
 
-                # Metadata supplement
+                # Decode DB Flags (Initially grab value)
+                db_flags_val = ac.get("dbFlags", 0)
+                
+                # If typ was unknown or dbFlags missing, aggressive check against external v2 APIs
+                # before we decide if it's military and broadcast it
+                external_meta = {}
+                if typ == "Unknown" or db_flags_val == 0:
+                    external_meta = get_external_v2_metadata(hex_code)
+                    if external_meta:
+                        if db_flags_val == 0:
+                            db_flags_val = external_meta.get("dbFlags", 0)
+                            is_mil = bool(db_flags_val & 1)  # Re-evaluate is_mil if new flags found
+                        if typ == "Unknown":
+                            typ = external_meta.get("desc") or external_meta.get("t") or "Unknown"
+
+                # Standard HexDB hook (mostly for Reg/Owner/Manufacturer metadata)
                 if typ == "Unknown" or reg == "N/A" or owner == "Unknown" or manufacturer == "Unknown" or type_label == "Unknown":
                     meta = get_aircraft_metadata(hex_code)
                     if meta:
@@ -316,8 +348,11 @@ while True:
                         if manufacturer == "Unknown": manufacturer = meta.get("Manufacturer") or "Unknown"
                         if type_label == "Unknown": type_label = meta.get("Type") or "Unknown"
 
-                # Decode DB Flags
-                db_flags_val = ac.get("dbFlags", 0)
+                # Check toggles AFTER we re-evaluate is_mil with ADSB.one data
+                if is_mil and not ENABLE_MILITARY: continue
+                if not is_mil and not ENABLE_CIVIL: continue
+
+                # Build Text DB Flags
                 flags = []
                 if db_flags_val & 1: flags.append("Military 🪖")
                 if db_flags_val & 2: flags.append("Interested ⭐")
