@@ -71,6 +71,34 @@ If you prefer to configure things manually or are not using a standard Linux sys
    python3 all_aircraft.py
    ```
 
+4. **(Optional) Run as a background service (systemd):**
+   ```bash
+   sudo nano /etc/systemd/system/adsb-alert.service
+   ```
+   Paste the following (adjust `User` and `WorkingDirectory` / `ExecStart` paths as needed):
+   ```ini
+   [Unit]
+   Description=ADSB Telegram Alert Service
+   After=network.target
+
+   [Service]
+   Type=simple
+   User=pi
+   WorkingDirectory=/home/pi/ADSB-TG-ALERT
+   ExecStart=/usr/bin/python3 /home/pi/ADSB-TG-ALERT/all_aircraft.py
+   Restart=always
+   RestartSec=10
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   Save, then enable and start the service:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable adsb-alert
+   sudo systemctl start adsb-alert
+   ```
+
 ---
 
 ## 🗑️ Uninstallation
